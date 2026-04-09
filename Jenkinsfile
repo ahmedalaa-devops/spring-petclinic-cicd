@@ -72,7 +72,7 @@ pipeline {
                     docker rm   petclinic || true
                     docker run -d \
                         --name petclinic \
-                        -p 9090:9090 \
+                        -p 8090:8080 \
                         --restart unless-stopped \
                         ${DOCKER_IMAGE}:latest
                 """
@@ -83,7 +83,7 @@ pipeline {
             steps {
                 echo '✔️ Verifying deployment...'
                 sh 'sleep 10'
-                sh 'curl -f http://localhost:9090 || exit 1'
+                sh 'curl -f http://localhost:8090 || exit 1'
             }
         }
     }
