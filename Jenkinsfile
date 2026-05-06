@@ -1,30 +1,25 @@
 pipeline {
     agent any
-
     environment {
-        DOCKER_IMAGE = "ahmeddevop/petclinic"
-        DOCKER_TAG   = "${env.BUILD_NUMBER}"
+        DOCKER_IMAGE    = "ahmeddevop/petclinic"
+        DOCKER_TAG      = "${env.BUILD_NUMBER}"
+        NEXUS_HOSTED    = "localhost:30082"
+        NEXUS_GROUP     = "localhost:30083"
+        NEXUS_IMAGE     = "localhost:30082/petclinic"
     }
-
     stages {
-
         stage('Checkout') {
             steps {
-                echo '📥 Cloning repository...'
                 checkout scm
             }
         }
-
         stage('Build') {
             steps {
-                echo '🔨 Building with Maven...'
                 sh 'mvn clean package -DskipTests'
             }
         }
-
         stage('Test') {
             steps {
-                echo '🧪 Running unit tests...'
                 sh 'mvn test -Dtest="!MySqlIntegrationTests"'
             }
             post {
@@ -33,25 +28,19 @@ pipeline {
                 }
             }
         }
-
         stage('Code Quality Check') {
             steps {
-                echo '🔍 Checking code quality...'
                 sh 'mvn checkstyle:check || true'
             }
         }
-
         stage('Build Docker Image') {
             steps {
-                echo '🐳 Building Docker image...'
                 sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
                 sh "docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest"
             }
         }
-
         stage('Push to Docker Hub') {
             steps {
-                echo '📤 Pushing to Docker Hub...'
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-credentials',
                     usernameVariable: 'DOCKER_USER',
@@ -63,10 +52,26 @@ pipeline {
                 }
             }
         }
-
+        stage('Push to Nexus Hosted') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-credentials',
+                    usernameVariable: 'NEXUS_USER',
+                    passwordVariable: 'NEXUS_PASS'
+                )]) {
+                    sh """
+                        echo \$NEXUS_PASS | docker login ${NEXUS_HOSTED} \
+                            -u \$NEXUS_USER --password-stdin
+                        docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${NEXUS_IMAGE}:${DOCKER_TAG}
+                        docker tag ${DOCKER_IMAGE}:latest ${NEXUS_IMAGE}:latest
+                        docker push ${NEXUS_IMAGE}:${DOCKER_TAG}
+                        docker push ${NEXUS_IMAGE}:latest
+                    """
+                }
+            }
+        }
         stage('Deploy') {
             steps {
-                echo '🚀 Deploying container...'
                 sh """
                     docker stop petclinic || true
                     docker rm   petclinic || true
@@ -74,28 +79,26 @@ pipeline {
                         --name petclinic \
                         -p 8090:8080 \
                         --restart unless-stopped \
-                        ${DOCKER_IMAGE}:latest
+                        ${NEXUS_GROUP}/petclinic:latest
                 """
             }
         }
-
         stage('Verify') {
             steps {
-                echo '✔️ Verifying deployment...'
                 sh 'sleep 10'
                 sh 'curl -f http://localhost:8090 || exit 1'
             }
         }
     }
-
     post {
         success {
             echo '✅ Pipeline completed successfully!'
         }
         failure {
-            echo '❌ Pipeline failed — check logs!'
+            echo '❌ Pipeline failed!'
         }
         always {
+            sh "docker logout ${NEXUS_HOSTED} || true"
             sh 'docker logout || true'
         }
     }
