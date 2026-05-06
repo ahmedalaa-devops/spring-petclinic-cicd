@@ -85,7 +85,7 @@ pipeline {
         }
         stage('Verify') {
             steps {
-                sh 'sleep 10'
+                sh 'sleep 30'
                 sh 'curl -f http://localhost:8090 || exit 1'
             }
         }
